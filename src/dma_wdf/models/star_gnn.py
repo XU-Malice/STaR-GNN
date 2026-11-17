@@ -501,7 +501,7 @@ def build_star_gnn_model(
 
     # Build the graph recurrent backbone using the shared graph contract.
     backbone_config = deepcopy(config)
-    backbone_config["model"]["name"] = "backbone"
+    backbone_config["model"]["name"] = "graph_recurrent"
     base = build_graph_recurrent_backbone(
         backbone_config,
         project_root=project_root,
