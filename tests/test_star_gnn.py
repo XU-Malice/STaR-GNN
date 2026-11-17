@@ -206,3 +206,58 @@ def test_fa_dpr_decoder_loop_matches_original_when_context_is_zero() -> None:
         teacher_forcing_ratio=0.0,
     )
     torch.testing.assert_close(observed, expected, atol=0.0, rtol=0.0)
+
+
+def test_factory_constructs_star_gnn_with_graph_recurrent_backbone(monkeypatch, tmp_path) -> None:
+    import dma_wdf.models.star_gnn as star_module
+
+    def fake_backbone_builder(config, **kwargs):
+        assert config["model"]["name"] == "graph_recurrent"
+        assert config["model"]["hidden_dim"] == 4
+        assert kwargs["horizon"] == 24
+        return GraphRecurrentBackbone(
+            random_walk=torch.eye(2),
+            input_dim=3,
+            hidden_dim=4,
+            horizon=24,
+            num_nodes=2,
+            num_rnn_layers=1,
+            max_diffusion_step=2,
+            future_exog_dim=1,
+        )
+
+    monkeypatch.setattr(
+        star_module,
+        "build_graph_recurrent_backbone",
+        fake_backbone_builder,
+    )
+    config = {
+        "model": {"name": "star_gnn", "hidden_dim": 4, "dropout": 0.0},
+        "task": {"history_hours": 672},
+        "innovation": {
+            "dssn_sasr": {
+                "slice_hours": 24,
+                "epsilon": 1.0e-5,
+                "initial_alpha": 0.5,
+            },
+            "fa_dpr": {
+                "patch_length": 24,
+                "num_heads": 1,
+                "attention_dim": 3,
+                "dropout": 0.0,
+                "gate_bias": -2.0,
+                "condition_on_future_calendar": True,
+            },
+        },
+    }
+    model = star_module.build_star_gnn_model(
+        config,
+        project_root=tmp_path,
+        input_dim=3,
+        future_exog_dim=1,
+        horizon=24,
+        history_hours=672,
+        variant="full",
+    )
+    assert isinstance(model, STaRGNN)
+    assert model.variant == "full"
