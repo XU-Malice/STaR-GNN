@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "star-gnn-bwdf"
+version = "1.0.0"
+description = "Minimal STaR-GNN spatiotemporal graph recurrent model for multi-DMA water-demand forecasting"
+requires-python = ">=3.11"
+dependencies = [
+  "torch>=2.1",
+  "numpy>=1.24",
+  "pandas>=2.0"
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
