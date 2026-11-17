@@ -11,7 +11,7 @@ Definition
            0     otherwise
 
 No empirical correlation threshold, top-K pruning, absolute value, or
-self-loop is used. The DCRNN support is the row-normalised random walk
+self-loop is used. The graph recurrent support is the row-normalised random walk
 matrix ``P = D^{-1} A``.
 """
 

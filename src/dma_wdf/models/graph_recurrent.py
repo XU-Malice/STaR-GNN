@@ -1,7 +1,7 @@
-"""DCRNN model components for multi-DMA water-demand forecasting.
+"""GraphRecurrentBackbone model components for multi-DMA water-demand forecasting.
 
 The core model classes contain model mathematics only. The convenience
-function :func:`build_dcrnn_model` loads and validates the fixed graph
+function :func:`build_graph_recurrent_backbone` loads and validates the fixed graph
 artifact, then constructs the model. This module does not build datasets,
 create optimizers, implement early stopping, or compute metrics.
 
@@ -181,12 +181,12 @@ class DiffusionConv(nn.Module):
         )
 
 
-class DCGRUCell(nn.Module):
+class DiffusionGRUCell(nn.Module):
     """Diffusion-convolutional GRU cell.
 
     The reset and update gates are obtained jointly from
     ``[X_t, H_{t-1}]``. The candidate state is computed from
-    ``[X_t, r_t ⊙ H_{t-1}]``, matching the DCRNN formulation.
+    ``[X_t, r_t ⊙ H_{t-1}]``, matching the GraphRecurrentBackbone formulation.
     """
 
     def __init__(
@@ -200,7 +200,7 @@ class DCGRUCell(nn.Module):
         self.hidden_dim = _validate_positive_int("hidden_dim", hidden_dim)
         joint_dim = self.input_dim + self.hidden_dim
 
-        # The official DCRNN implementation starts reset/update biases at 1.
+        # The official GraphRecurrentBackbone implementation starts reset/update biases at 1.
         self.gate_conv = DiffusionConv(
             joint_dim,
             2 * self.hidden_dim,
@@ -247,7 +247,7 @@ class DCGRUCell(nn.Module):
         return update * hidden + (1.0 - update) * candidate
 
 
-class DCRNNEncoder(nn.Module):
+class GraphRecurrentEncoder(nn.Module):
     """Stacked DCGRU encoder over historical node features."""
 
     def __init__(
@@ -267,7 +267,7 @@ class DCRNNEncoder(nn.Module):
 
         self.layers = nn.ModuleList(
             [
-                DCGRUCell(
+                DiffusionGRUCell(
                     self.input_dim if layer == 0 else self.hidden_dim,
                     self.hidden_dim,
                     max_diffusion_step=max_diffusion_step,
@@ -333,7 +333,7 @@ class DCRNNEncoder(nn.Module):
         return torch.stack(states, dim=0)
 
 
-class DCRNNDecoder(nn.Module):
+class GraphRecurrentDecoder(nn.Module):
     """Autoregressive stacked-DCGRU decoder.
 
     Scheduled sampling is controlled by ``teacher_forcing_ratio`` but the
@@ -362,7 +362,7 @@ class DCRNNDecoder(nn.Module):
         decoder_input_dim = 1 + self.future_exog_dim
         self.layers = nn.ModuleList(
             [
-                DCGRUCell(
+                DiffusionGRUCell(
                     decoder_input_dim if layer == 0 else self.hidden_dim,
                     self.hidden_dim,
                     max_diffusion_step=max_diffusion_step,
@@ -472,7 +472,7 @@ class DCRNNDecoder(nn.Module):
                 if ratio >= 1.0:
                     previous_demand = target[:, step]
                 else:
-                    # The official DCRNN decoder draws one Bernoulli choice
+                    # The official GraphRecurrentBackbone decoder draws one Bernoulli choice
                     # per decoding step and broadcasts it across the batch.
                     teacher_mask = (
                         torch.rand(
@@ -492,14 +492,14 @@ class DCRNNDecoder(nn.Module):
         return torch.stack(predictions, dim=1)
 
 
-class DCRNN(nn.Module):
-    """Task-configurable DCRNN with one fixed graph support.
+class GraphRecurrentBackbone(nn.Module):
+    """Task-configurable GraphRecurrentBackbone with one fixed graph support.
 
     The same class is used for both 24 h and 168 h forecasting. Only the
     constructor's ``horizon`` changes; the graph artifact remains identical.
     """
 
-    model_name = "dcrnn"
+    model_name = "graph_recurrent"
 
     def __init__(
         self,
@@ -542,14 +542,14 @@ class DCRNN(nn.Module):
         )
         self.graph_metadata = dict(graph_metadata or {})
 
-        self.encoder = DCRNNEncoder(
+        self.encoder = GraphRecurrentEncoder(
             input_dim=self.input_dim,
             hidden_dim=self.hidden_dim,
             num_layers=self.num_rnn_layers,
             max_diffusion_step=self.max_diffusion_step,
             dropout=dropout,
         )
-        self.decoder = DCRNNDecoder(
+        self.decoder = GraphRecurrentDecoder(
             hidden_dim=self.hidden_dim,
             horizon=self.horizon,
             future_exog_dim=self.future_exog_dim,
@@ -706,7 +706,7 @@ def _validate_graph_contract(
         raise ValueError("Graph random_walk rows do not sum to one.")
 
 
-def build_dcrnn_model(
+def build_graph_recurrent_backbone(
     config: dict[str, Any],
     *,
     project_root: Path,
@@ -714,28 +714,28 @@ def build_dcrnn_model(
     future_exog_dim: int,
     horizon: int,
     device: torch.device | str | None = None,
-) -> DCRNN:
-    """Load the fixed graph and construct DCRNN for 24 h or 168 h.
+) -> GraphRecurrentBackbone:
+    """Load the fixed graph and construct GraphRecurrentBackbone for 24 h or 168 h.
 
     This is the only model-construction entry point required in stage 3.
     The later unified train/test scripts will call this function whenever
-    ``model.name`` is ``dcrnn``.
+    ``model.name`` is ``graph_recurrent``.
     """
     if "model" not in config or "graph" not in config:
         raise ValueError("config must contain model and graph sections.")
     model_config = config["model"]
     graph_config = config["graph"]
-    if str(model_config["name"]).lower() != "dcrnn":
+    if str(model_config["name"]).lower() != "graph_recurrent":
         raise ValueError(
-            "build_dcrnn_model requires model.name='dcrnn'."
+            "build_graph_recurrent_backbone requires model.name='graph_recurrent'."
         )
     if graph_config["matrix_key"] != "random_walk":
         raise ValueError(
-            "DCRNN requires graph.matrix_key='random_walk'."
+            "GraphRecurrentBackbone requires graph.matrix_key='random_walk'."
         )
     if int(model_config["max_diffusion_step"]) != 2:
         raise ValueError(
-            "The fixed BWDF DCRNN protocol requires "
+            "The fixed BWDF GraphRecurrentBackbone protocol requires "
             "max_diffusion_step=2."
         )
     if int(model_config["num_graph_supports"]) != 1:
@@ -779,7 +779,7 @@ def build_dcrnn_model(
         "node_names": graph["node_names"],
         "dma_columns": graph["dma_columns"],
     }
-    model = DCRNN(
+    model = GraphRecurrentBackbone(
         random_walk=torch.from_numpy(
             np.asarray(graph["random_walk"], dtype=np.float32)
         ),

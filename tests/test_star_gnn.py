@@ -3,8 +3,8 @@ from __future__ import annotations
 import torch
 import torch.nn.functional as F
 
-from dma_wdf.models.dcrnn import DCRNN
-from dma_wdf.models.star_dcrnn import STaRDCRNN
+from dma_wdf.models.graph_recurrent import GraphRecurrentBackbone
+from dma_wdf.models.star_gnn import STaRGNN
 
 
 def _support(nodes: int) -> torch.Tensor:
@@ -16,8 +16,8 @@ def _star(
     horizon: int = 24,
     dssn_sasr: bool = True,
     fa_dpr: bool = True,
-) -> STaRDCRNN:
-    return STaRDCRNN(
+) -> STaRGNN:
+    return STaRGNN(
         random_walk=_support(2),
         input_dim=3,
         hidden_dim=4,
@@ -62,8 +62,8 @@ def test_all_factorial_variants_have_expected_shape() -> None:
             assert torch.isfinite(output).all()
 
 
-def test_disabled_model_is_exact_sealed_dcrnn() -> None:
-    baseline = DCRNN(
+def test_disabled_model_matches_graph_recurrent_backbone() -> None:
+    baseline = GraphRecurrentBackbone(
         random_walk=_support(2),
         input_dim=3,
         hidden_dim=4,
@@ -74,7 +74,7 @@ def test_disabled_model_is_exact_sealed_dcrnn() -> None:
         future_exog_dim=1,
     )
     model = _star(dssn_sasr=False, fa_dpr=False)
-    model.load_dcrnn_backbone(baseline)
+    model.load_graph_recurrent_backbone(baseline)
     baseline.eval()
     model.eval()
     x, _, future = _inputs(24)
@@ -94,7 +94,7 @@ def test_evaluation_target_is_structurally_isolated() -> None:
     torch.testing.assert_close(first, third, atol=0.0, rtol=0.0)
 
 
-def test_joint_loss_reaches_dcrnn_fa_dpr_and_sasr() -> None:
+def test_joint_loss_reaches_backbone_fa_dpr_and_sasr() -> None:
     model = _star(dssn_sasr=True, fa_dpr=True)
     model.train()
     x, y, future = _inputs(24)

@@ -1,61 +1,74 @@
 # STaR-GNN
 
-**STaR-GNN** is a spatiotemporal graph recurrent model for multi–district metered area (DMA) water-demand forecasting. This repository contains a **model-only research implementation** of the proposed approach, with its essential diffusion-recurrent backbone and basic tests.
+**STaR-GNN** is a spatiotemporal graph recurrent model for short-term water-demand forecasting across district metered areas (DMAs). This small repository provides the **algorithm implementation only**: the proposed normalization and retrieval modules, the integrated graph recurrent network, a minimal forward-pass example, and model tests.
 
 ## Method
 
-- **SAS-Norm (Seasonally Anchored State Normalization)** separates daily demand level and variability from intraday patterns and estimates future daily states using historical observations.
-- **FA-DPR (Forecast-Aligned Daily Pattern Retrieval)** retrieves graph-encoded historical daily representations, conditioned on the decoder state and available future calendar features.
-- **Graph-based encoder–decoder:** diffusion graph recurrent units capture functional inter-DMA dependence.
+- **SAS-Norm (Seasonally Anchored State Normalization):** separates day-level demand states from intraday variation and estimates future daily states from historical data.
+- **FA-DPR (Forecast-Aligned Daily Pattern Retrieval):** retrieves historical graph-encoded daily representations aligned to each prediction step, conditioned on decoder state and available future calendar features.
+- **Graph recurrent backbone:** models functional inter-DMA dependence with diffusion-based recurrent graph propagation.
 
-The original implementation retains internal names such as `STaRDCRNN` and `dssn_sasr` for compatibility; these refer to the STaR-GNN model and its SAS-Norm component.
+## Code
 
-## Repository contents
+| File | Purpose |
+| --- | --- |
+| `src/dma_wdf/models/star_components.py` | SAS-Norm and FA-DPR |
+| `src/dma_wdf/models/star_gnn.py` | Integrated **STaRGNN** model |
+| `src/dma_wdf/models/graph_recurrent.py` | Required graph recurrent backbone |
+| `src/dma_wdf/data/graph.py` | Training-only Pearson functional graph utilities |
+| `examples/minimal_forward.py` | Synthetic-input model execution |
+| `tests/` | Model/module tests |
 
-- `src/dma_wdf/models/star_components.py` — SAS-Norm and FA-DPR modules.
-- `src/dma_wdf/models/star_dcrnn.py` — integrated STaR-GNN architecture.
-- `src/dma_wdf/models/dcrnn.py` — diffusion-recurrent encoder–decoder **required as the model backbone**, not a separately released baseline experiment.
-- `src/dma_wdf/data/graph.py` — training-only Pearson functional graph construction and graph loading.
-- `examples/minimal_forward.py` — minimal forward-pass example with synthetic inputs.
-- `tests/` — unit tests for the proposed modules and model integration.
+This repository does not include separate baseline experiments, manuscript figures, reported result tables, raw observations, checkpoints, or the full training and evaluation pipeline.
 
-This release intentionally omits **baseline experiments, training-result tables, plots, raw BWDF data, checkpoints, and the full paper-specific data/training/evaluation pipeline**. It is intended to make the algorithm source inspectable, **not to claim that published numerical results can be reproduced from this subset alone**.
+## Installation and basic check
 
-## Installation
-
-Python 3.11 or later is recommended.
+Use Python 3.11 or newer.
 
 ```bash
 python -m pip install -e .
 python examples/minimal_forward.py
 ```
 
-To run the included unit tests:
+To run the unit tests:
 
 ```bash
 python -m pip install pytest
-python -m pytest -q tests/test_star_components.py tests/test_star_dcrnn.py
+python -m pytest -q tests/test_star_components.py tests/test_star_gnn.py
 ```
 
 ## Model interface
 
-The implementation expects hourly node features with the demand feature in **channel 0**:
+- Past observations: `x_past` has shape `[batch, 672, N, C]`, with demand in feature channel 0.
+- Graph: `random_walk` is an `[N, N]` row-normalized functional graph derived **only from training data**.
+- Known future covariates: `x_future_exog` has shape `[batch, horizon, N, future_exog_dim]`; these are known calendar features, **not future observed weather or demand**.
+- Prediction output: `[batch, horizon, N]` for horizons of 24 or 168 hours.
 
-- Historical input `x_past`: `[batch, 672, num_nodes, input_dim]` (28 days).
-- Known future calendar features `x_future_exog`: `[batch, horizon, num_nodes, future_exog_dim]`, where `horizon` is 24 or 168 hours.
-- Graph `random_walk`: `[num_nodes, num_nodes]`, a row-normalized training-derived positive-Pearson functional graph.
-- Output: `[batch, horizon, num_nodes]` predictions.
+The example uses a **synthetic identity graph and randomly initialized model weights** to validate software execution. It is not a trained water-demand forecasting model.
 
-Do not use future observed demand as an input at inference time. The example uses **randomly initialized weights and a synthetic identity graph**, solely to demonstrate model execution. It makes **no meaningful forecasting claim**.
+## Software and data availability
 
-## Data and reproducibility scope
+- **Software:** STaR-GNN (Python/PyTorch); the algorithm source and basic usage instructions are provided in this repository.
+- **Original dataset:** *Battle of Water Demand Forecasting* (BWDF), published as supplementary material to Alvisi et al. (2025), *Journal of Water Resources Planning and Management*, DOI: [10.1061/JWRMD5.WRENG-6887](https://doi.org/10.1061/JWRMD5.WRENG-6887).
+- **Original dataset download:** [Alvisi et al. supplementary material](https://ascelibrary.org/doi/suppl/10.1061/JWRMD5.WRENG-6887/suppl_file/supplemental_materials_jwrmd5.wreng-6887_alvisi.zip).
+- **Organizer-approved data loading/evaluation package:** [WaterFutures/wf4bwdf](https://github.com/WaterFutures/wf4bwdf) ([archived release DOI](https://doi.org/10.5281/zenodo.17185809)). This package reads the competition data from the original supplementary materials and provides an official-competition-style evaluation interface.
 
-The associated research uses the public *Battle of Water Demand Forecasting* (BWDF) dataset. Refer to the original competition publications and data providers for the dataset and its terms. Raw observations are **not redistributed** here.
+To load the original competition data:
 
-Reproducing the numerical results reported in the research paper additionally requires the exact data splits, training configuration, preprocessing, trained weights or rerun training, and evaluation protocol; these are **outside this minimal algorithm release**.
+```bash
+python -m pip install wf4bwdf
+```
 
-## Attribution and license
+```python
+import wf4bwdf as bwdf
+dataset = bwdf.load_complete_dataset()
+dma_inflows = dataset["dma-inflows"]
+```
 
-The model builds on the diffusion-convolutional recurrent neural network (DCRNN) formulation (Li et al., 2018) and introduces the STaR-GNN components described above. The included diffusion backbone is required by the integrated model.
+BWDF raw data are **not** redistributed in this repository. The original paper and data maintainers should be cited when using the dataset. The model-only release does not, by itself, reproduce paper metrics; that additionally requires the exact training data splits, preprocessing, experiment setup, training procedure, and checkpoint selection.
 
-Distributed under the MIT License; see [LICENSE](LICENSE).
+## Prior work and license
+
+The graph recurrent backbone employs the established diffusion-convolutional recurrent formulation introduced by Li et al. (2018), *Diffusion Convolutional Recurrent Neural Network: Data-Driven Traffic Forecasting*. STaR-GNN contributes SAS-Norm and FA-DPR on top of graph recurrent propagation. Renaming internal software classes does **not** change the model mathematics or its scientific provenance.
+
+MIT License. See [LICENSE](LICENSE).

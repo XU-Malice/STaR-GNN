@@ -1,8 +1,8 @@
-"""STaR-DCRNN: slice normalization, restoration, and daily retrieval.
+"""STaR-GNN: diffusion graph recurrence with SAS-Norm and FA-DPR.
 
-This file is additive: the sealed DCRNN implementation is imported and left
-unchanged.  With both innovations disabled, :class:`STaRDCRNN` calls the
-original :class:`~dma_wdf.models.dcrnn.DCRNN.forward` method directly.
+The graph recurrent backbone is shared by the complete model and the
+module-disabled configuration. All numerical operations are inherited from
+the original research implementation without mathematical changes.
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from dma_wdf.models.dcrnn import DCRNN, build_dcrnn_model
+from dma_wdf.models.graph_recurrent import GraphRecurrentBackbone, build_graph_recurrent_backbone
 from dma_wdf.models.star_components import (
     DSSNSASR,
     DSSNSASROutput,
@@ -44,10 +44,10 @@ class STaRForwardDetails:
     fa_dpr: FADPROutput | None
 
 
-class STaRDCRNN(DCRNN):
-    """DCRNN with optional DSSN-SASR and FA-DPR innovations."""
+class STaRGNN(GraphRecurrentBackbone):
+    """GraphRecurrentBackbone with optional DSSN-SASR and FA-DPR innovations."""
 
-    model_name = "star_dcrnn"
+    model_name = "star_gnn"
 
     def __init__(
         self,
@@ -146,7 +146,7 @@ class STaRDCRNN(DCRNN):
         self,
         x_past: torch.Tensor,
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        """Run the unchanged DCGRU cells and retain top-layer states."""
+        """Run the unchanged DiffusionGRU cells and retain top-layer states."""
         batch_size, sequence_length, num_nodes, _ = x_past.shape
         states = [
             x_past.new_zeros(batch_size, num_nodes, self.hidden_dim)
@@ -170,20 +170,20 @@ class STaRDCRNN(DCRNN):
             top_sequence.append(states[-1])
         return torch.stack(states, dim=0), torch.stack(top_sequence, dim=1)
 
-    def load_dcrnn_backbone(self, dcrnn: DCRNN) -> None:
-        """Copy only sealed DCRNN parameters for identity/warm-start tests."""
+    def load_graph_recurrent_backbone(self, backbone: GraphRecurrentBackbone) -> None:
+        """Copy only sealed GraphRecurrentBackbone parameters for identity/warm-start tests."""
         if (
-            dcrnn.input_dim != self.input_dim
-            or dcrnn.hidden_dim != self.hidden_dim
-            or dcrnn.horizon != self.horizon
-            or dcrnn.num_nodes != self.num_nodes
-            or dcrnn.num_rnn_layers != self.num_rnn_layers
+            backbone.input_dim != self.input_dim
+            or backbone.hidden_dim != self.hidden_dim
+            or backbone.horizon != self.horizon
+            or backbone.num_nodes != self.num_nodes
+            or backbone.num_rnn_layers != self.num_rnn_layers
         ):
-            raise ValueError("DCRNN backbone architecture mismatch.")
-        if not torch.equal(dcrnn.random_walk, self.random_walk):
-            raise ValueError("DCRNN backbone graph mismatch.")
-        self.encoder.load_state_dict(dcrnn.encoder.state_dict(), strict=True)
-        self.decoder.load_state_dict(dcrnn.decoder.state_dict(), strict=True)
+            raise ValueError("GraphRecurrentBackbone backbone architecture mismatch.")
+        if not torch.equal(backbone.random_walk, self.random_walk):
+            raise ValueError("GraphRecurrentBackbone backbone graph mismatch.")
+        self.encoder.load_state_dict(backbone.encoder.state_dict(), strict=True)
+        self.decoder.load_state_dict(backbone.decoder.state_dict(), strict=True)
 
     def sasr_parameters(self) -> list[nn.Parameter]:
         if self.dssn_sasr is None:
@@ -201,7 +201,7 @@ class STaRDCRNN(DCRNN):
     ) -> tuple[torch.Tensor, FADPROutput]:
         """Run the original decoder recurrence with step-wise FA-DPR.
 
-        Only the top-layer state is retrieval-conditioned.  DCGRU cells,
+        Only the top-layer state is retrieval-conditioned.  DiffusionGRU cells,
         output projection, autoregressive inputs, and the official scheduled
         sampling rule are the original decoder modules and semantics.
         """
@@ -355,7 +355,7 @@ class STaRDCRNN(DCRNN):
         teacher_forcing_ratio: float = 0.0,
         return_details: bool = False,
     ) -> torch.Tensor | STaRForwardDetails:
-        # This exact direct path is the strict DCRNN degeneration contract.
+        # This exact direct path is the strict GraphRecurrentBackbone degeneration contract.
         if not self.use_dssn_sasr and not self.use_fa_dpr:
             prediction = super().forward(
                 x_past,
@@ -477,7 +477,7 @@ class STaRDCRNN(DCRNN):
         return metadata
 
 
-def build_star_dcrnn_model(
+def build_star_gnn_model(
     config: dict[str, Any],
     *,
     project_root: Path,
@@ -487,23 +487,23 @@ def build_star_dcrnn_model(
     history_hours: int,
     variant: str,
     device: torch.device | str | None = None,
-) -> STaRDCRNN:
-    """Build STaR-DCRNN from the same graph contract as sealed DCRNN."""
+) -> STaRGNN:
+    """Build STaR-GNN with a validated functional graph and recurrent backbone."""
     if variant not in VARIANT_FEATURES:
         raise ValueError(
             f"Unknown variant {variant!r}; expected "
             f"{sorted(VARIANT_FEATURES)}."
         )
-    if str(config["model"]["name"]).lower() != "star_dcrnn":
-        raise ValueError("STaR config must use model.name='star_dcrnn'.")
+    if str(config["model"]["name"]).lower() != "star_gnn":
+        raise ValueError("STaR config must use model.name='star_gnn'.")
     if int(history_hours) != int(config["task"]["history_hours"]):
         raise ValueError("history_hours does not match task config.")
 
-    # The sealed builder remains the single graph-contract authority.
-    dcrnn_config = deepcopy(config)
-    dcrnn_config["model"]["name"] = "dcrnn"
-    base = build_dcrnn_model(
-        dcrnn_config,
+    # Build the graph recurrent backbone using the shared graph contract.
+    backbone_config = deepcopy(config)
+    backbone_config["model"]["name"] = "backbone"
+    base = build_graph_recurrent_backbone(
+        backbone_config,
         project_root=project_root,
         input_dim=input_dim,
         future_exog_dim=future_exog_dim,
@@ -522,7 +522,7 @@ def build_star_dcrnn_model(
     if int(readout_config["num_heads"]) != 1:
         raise ValueError("The registered STaR protocol uses one attention head.")
     use_dssn_sasr, use_fa_dpr = VARIANT_FEATURES[variant]
-    model = STaRDCRNN(
+    model = STaRGNN(
         random_walk=base.random_walk,
         input_dim=input_dim,
         hidden_dim=base.hidden_dim,
@@ -546,7 +546,7 @@ def build_star_dcrnn_model(
             readout_config["condition_on_future_calendar"]
         ),
     )
-    model.load_dcrnn_backbone(base)
+    model.load_graph_recurrent_backbone(base)
     if device is not None:
         model = model.to(device)
     return model

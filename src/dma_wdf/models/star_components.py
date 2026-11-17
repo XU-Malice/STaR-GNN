@@ -1,4 +1,4 @@
-"""DSSN-SASR and forecast-aligned daily retrieval for STaR-DCRNN.
+"""DSSN-SASR and forecast-aligned daily retrieval for STaR-GNN.
 
 The implementation deliberately separates three roles:
 

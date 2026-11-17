@@ -6,14 +6,14 @@ They are NOT real BWDF observations or a trained forecasting model.
 
 import torch
 
-from dma_wdf.models.star_dcrnn import STaRDCRNN
+from dma_wdf.models.star_gnn import STaRGNN
 
 
 def main() -> None:
     torch.manual_seed(42)
     num_nodes = 2
     horizon = 24
-    model = STaRDCRNN(
+    model = STaRGNN(
         random_walk=torch.eye(num_nodes),
         input_dim=3,
         hidden_dim=4,
